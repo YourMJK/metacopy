@@ -16,15 +16,46 @@ struct Command: ParsableCommand {
 		helpMessageLabelColumnWidth: 20
 	)
 	
-	static func relativePath(of dest: URL, toDirectory base: URL) -> String {
-		let destComponents = dest.standardizedFileURL.pathComponents
-		let baseComponents = base.standardizedFileURL.pathComponents
-		var index = 0
-		while index < destComponents.count && index < baseComponents.count && destComponents[index] == baseComponents[index] {
-			index += 1
+	@Argument(help: ArgumentHelp("The path to the input directory.", valueName: "input directory"))
+	var inputDirectoryPath: String
+	
+	@Argument(help: ArgumentHelp("The path to the output directory.", valueName: "output directory"))
+	var outputDirectoryPath: String
+	
+	@Flag(name: .short, help: ArgumentHelp("Skip files when encountering errors instead of canceling."))
+	var ignoreErrors: Bool = false
+	
+	@Flag(name: .short, help: ArgumentHelp("Print relative paths of the files while they are copied."))
+	var verbose: Bool = false
+	
+	func run() throws {
+		let inputDirectoryURL = URL(fileURLWithPath: inputDirectoryPath, isDirectory: true)
+		let outputDirectoryURL = URL(fileURLWithPath: outputDirectoryPath, isDirectory: true)
+		
+		if !FileManager.default.fileExists(atPath: outputDirectoryPath) {
+			throw ArgumentsError.noSuchOutputDirectory(path: outputDirectoryPath)
 		}
-		var relComponents = Array(repeating: "..", count: baseComponents.count - index)
-		relComponents.append(contentsOf: destComponents[index...])
-		return relComponents.joined(separator: "/")
+		
+		let metaCopy = MetaCopy(
+			inputDir: inputDirectoryURL,
+			outputDir: outputDirectoryURL,
+			verbose: verbose,
+			skipErrors: ignoreErrors
+		)
+		try metaCopy.copyContents()
+	}
+}
+
+
+extension Command {
+	enum ArgumentsError: LocalizedError {
+		case noSuchOutputDirectory(path: String)
+		
+		var errorDescription: String? {
+			switch self {
+				case .noSuchOutputDirectory(let path):
+					return "No such output directory \"\(path)\""
+			}
+		}
 	}
 }
