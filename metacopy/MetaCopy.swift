@@ -218,9 +218,9 @@ struct MetaCopy {
 		// Copy extended attributes
 		if copyExtendedAttributes && sourceResourceValues.mayHaveExtendedAttributes! && !isSymbolicLink {
 			do {
-				for name in try Self.listExtendedAttributes(url: sourceURL) {
-					let data = try Self.readExtendedAttribute(url: sourceURL, name: name)
-					try Self.writeExtendedAttribute(url: mirrorURL, name: name, data: data)
+				for name in try ExtendedAttributes.list(url: sourceURL) {
+					let data = try ExtendedAttributes.read(url: sourceURL, name: name)
+					try ExtendedAttributes.write(url: mirrorURL, name: name, data: data)
 				}
 			}
 			catch {
@@ -255,14 +255,6 @@ extension MetaCopy {
 		case extendedAttributesCopying(url: URL, error: Error)
 		case flagsCopying(url: URL, error: Error)
 		
-		static func posixError(_ err: Int32) -> NSError {
-			NSError(
-				domain: NSPOSIXErrorDomain,
-				code: Int(err),
-				userInfo: [NSLocalizedDescriptionKey: String(cString: strerror(err))]
-			)
-		}
-		
 		var errorDescription: String? {
 			let (description, url, error): (String, URL?, Error?) = {
 				switch self {
@@ -296,62 +288,4 @@ extension MetaCopy {
 			return message
 		}
 	}
-}
-
-
-// MARK: - Extended Attributes
-
-extension MetaCopy {
-	
-	private static func listExtendedAttributes(url: URL) throws -> [String] {
-		try url.withUnsafeFileSystemRepresentation { fileSystemPath -> [String] in
-			let length = listxattr(fileSystemPath, nil, 0, 0)
-			guard length >= 0 else { throw FileError.posixError(errno) }
-			
-			// Create buffer with required size
-			var namebuf = Array<CChar>(repeating: 0, count: length)
-			
-			// Retrieve attribute list
-			let result = listxattr(fileSystemPath, &namebuf, namebuf.count, 0)
-			guard result >= 0 else { throw FileError.posixError(errno) }
-			
-			// Extract attribute names
-			let list = namebuf.split(separator: 0).compactMap {
-				$0.withUnsafeBufferPointer {
-					$0.withMemoryRebound(to: UInt8.self) {
-						String(bytes: $0, encoding: .utf8)
-					}
-				}
-			}
-			return list
-		}
-	}
-	
-	private static func readExtendedAttribute(url: URL, name: String) throws -> Data {
-		try url.withUnsafeFileSystemRepresentation { fileSystemPath -> Data in
-			// Determine attribute size
-			let length = getxattr(fileSystemPath, name, nil, 0, 0, 0)
-			guard length >= 0 else { throw FileError.posixError(errno) }
-			
-			// Create buffer with required size
-			var data = Data(count: length)
-			
-			// Retrieve attribute
-			let result = data.withUnsafeMutableBytes { [count = data.count] in
-				getxattr(fileSystemPath, name, $0.baseAddress, count, 0, 0)
-			}
-			guard result >= 0 else { throw FileError.posixError(errno) }
-			return data
-		}
-	}
-	
-	private static func writeExtendedAttribute(url: URL, name: String, data: Data) throws {
-		try url.withUnsafeFileSystemRepresentation { fileSystemPath in
-			let result = data.withUnsafeBytes {
-				setxattr(fileSystemPath, name, $0.baseAddress, data.count, 0, 0)
-			}
-			guard result >= 0 else { throw FileError.posixError(errno) }
-		}
-	}
-	
 }
