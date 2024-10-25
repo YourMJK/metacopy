@@ -10,10 +10,8 @@ import CommandLineTool
 
 
 struct MetaCopy {
-	let inputDir: URL
-	let outputDir: URL
-	let verbose: Bool
-	let skipErrors: Bool
+	let inputFile: URL
+	let outputFile: URL
 	
 	private let manager = FileManager.default
 	private let resourceKeys: Set<URLResourceKey> = [
@@ -24,7 +22,8 @@ struct MetaCopy {
 		.mayHaveExtendedAttributesKey,
 	]
 	
-	func copyContents() throws {
+	
+	func copyContents(verbose: Bool, skipErrors: Bool) throws {
 		var enumeratorError: (url: URL, error: Error)?
 		let errorHandler: ((URL, Error) -> Bool) = { url, error in
 			enumeratorError = (url, error)
@@ -33,20 +32,29 @@ struct MetaCopy {
 		}
 		
 		let enumerator = manager.enumerator(
-			at: inputDir,
+			at: inputFile,
 			includingPropertiesForKeys: Array(resourceKeys),
 			options: [.producesRelativePathURLs],
 			errorHandler: errorHandler
 		)
 		guard let enumerator else {
-			throw FileError.directoryEnumeration(url: outputDir)
+			throw FileError.directoryEnumeration(url: outputFile)
 		}
 		
 		// Enumerate contents of input directory recursively
 		for case let url as URL in enumerator {
 			let resourceValues = try url.resourceValues(forKeys: resourceKeys)
+			let relativePath = url.relativePath
+			let sourceURL = inputFile.appending(path: relativePath)
+			let mirrorURL = outputFile.appending(path: relativePath)
+			
 			do {
-				try copyFile(relativePath: url.relativePath, sourceResourceValues: resourceValues)
+				try copyFile(sourceURL: sourceURL, mirrorURL: mirrorURL, sourceResourceValues: resourceValues)
+				
+				// Print relative path
+				if verbose {
+					stdout(relativePath)
+				}
 			}
 			catch {
 				if skipErrors {
@@ -63,9 +71,13 @@ struct MetaCopy {
 		}
 	}
 	
-	private func copyFile(relativePath: String, sourceResourceValues: URLResourceValues) throws {
-		let sourceURL = inputDir.appending(path: relativePath)
-		let mirrorURL = outputDir.appending(path: relativePath)
+	func copyFile() throws {
+		let sourceResourceValues = try inputFile.resourceValues(forKeys: resourceKeys)
+		try copyFile(sourceURL: inputFile, mirrorURL: outputFile, sourceResourceValues: sourceResourceValues)
+	}
+	
+	
+	private func copyFile(sourceURL: URL, mirrorURL: URL, sourceResourceValues: URLResourceValues) throws {
 		let sourcePath = sourceURL.path(percentEncoded: false)
 		let mirrorPath = mirrorURL.path(percentEncoded: false)
 		
@@ -77,12 +89,12 @@ struct MetaCopy {
 		let isSymbolicLink = sourceResourceValues.isSymbolicLink!
 		let isAliasFile = sourceResourceValues.isAliasFile!
 		
-		// Skip unsupported input files
+		// Check for unsupported input file
 		guard isRegularFile || isDirectory || isSymbolicLink || isAliasFile else {
 			throw FileError.unsupportedFileType(url: sourceURL)
 		}
 		
-		// Check if mirror already exists
+		// Check whether mirror already exists and types match
 		let mirrorExists = (try? mirrorURL.checkResourceIsReachable()) ?? false
 		if mirrorExists {
 			let mirrorResourceValues = try mirrorURL.resourceValues(forKeys: resourceKeys)
@@ -168,11 +180,6 @@ struct MetaCopy {
 			catch {
 				throw FileError.extendedAttributesCopying(url: mirrorURL, error: error)
 			}
-		}
-		
-		// Print relative path
-		if verbose {
-			stdout(relativePath)
 		}
 	}
 	
