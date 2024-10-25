@@ -12,6 +12,10 @@ import CommandLineTool
 struct MetaCopy {
 	let inputFile: URL
 	let outputFile: URL
+	let copyDates: Bool
+	let copyPermissions: Bool
+	let copyExtendedAttributes: Bool
+	let copyHFSCodes: Bool
 	
 	private let manager = FileManager.default
 	private let resourceKeys: Set<URLResourceKey> = [
@@ -21,6 +25,38 @@ struct MetaCopy {
 		.isSymbolicLinkKey,
 		.mayHaveExtendedAttributesKey,
 	]
+	private let attributeKeysToCopy: [FileAttributeKey]
+	
+	
+	init(inputFile: URL, outputFile: URL, copyDates: Bool, copyPermissions: Bool, copyExtendedAttributes: Bool, copyHFSCodes: Bool) {
+		self.inputFile = inputFile
+		self.outputFile = outputFile
+		self.copyDates = copyDates
+		self.copyPermissions = copyPermissions
+		self.copyExtendedAttributes = copyExtendedAttributes
+		self.copyHFSCodes = copyHFSCodes
+		
+		var attributeKeysToCopy = [FileAttributeKey]()
+		func addKeys(if condition: Bool, _ newKeys: [FileAttributeKey]) {
+			if condition { attributeKeysToCopy.append(contentsOf: newKeys) }
+		}
+		addKeys(if: copyDates, [
+			.creationDate,
+			.modificationDate,
+		])
+		addKeys(if: copyPermissions, [
+			.posixPermissions,
+			.ownerAccountID,
+			.ownerAccountName,
+			.groupOwnerAccountID,
+			.groupOwnerAccountName,
+		])
+		addKeys(if: copyHFSCodes, [
+			.hfsCreatorCode,
+			.hfsTypeCode
+		])
+		self.attributeKeysToCopy = attributeKeysToCopy
+	}
 	
 	
 	func copyContents(verbose: Bool, skipErrors: Bool) throws {
@@ -81,9 +117,6 @@ struct MetaCopy {
 		let sourcePath = sourceURL.path(percentEncoded: false)
 		let mirrorPath = mirrorURL.path(percentEncoded: false)
 		
-//		print(sourceURL, mirrorURL)
-//		print(sourcePath, mirrorPath)
-		
 		let isRegularFile = sourceResourceValues.isRegularFile!
 		let isDirectory = sourceResourceValues.isDirectory!
 		let isSymbolicLink = sourceResourceValues.isSymbolicLink!
@@ -111,17 +144,6 @@ struct MetaCopy {
 		// Read attributes
 		let attributes = try manager.attributesOfItem(atPath: sourcePath)
 		var mirrorAttributes: [FileAttributeKey: Any] = [:]
-		let attributeKeysToCopy: [FileAttributeKey] = [
-			.creationDate,
-			.modificationDate,
-			.posixPermissions,
-			.ownerAccountID,
-			.ownerAccountName,
-			.groupOwnerAccountID,
-			.groupOwnerAccountName,
-			.hfsCreatorCode,
-			.hfsTypeCode
-		]
 		for key in attributeKeysToCopy {
 			mirrorAttributes[key] = attributes[key]
 		}
@@ -170,7 +192,7 @@ struct MetaCopy {
 		}
 		
 		// Copy extended attributes
-		if sourceResourceValues.mayHaveExtendedAttributes! && !isSymbolicLink {
+		if copyExtendedAttributes && sourceResourceValues.mayHaveExtendedAttributes! && !isSymbolicLink {
 			do {
 				for name in try Self.listExtendedAttributes(url: sourceURL) {
 					let data = try Self.readExtendedAttribute(url: sourceURL, name: name)

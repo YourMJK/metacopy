@@ -16,26 +16,55 @@ struct Command: ParsableCommand {
 		helpMessageLabelColumnWidth: 20
 	)
 	
+	struct RecursiveModeOptions: ParsableArguments {
+		@Flag(name: .short, help: ArgumentHelp("Recursively copy contents of directory. Input and output need to be directories."))
+		var recursive: Bool = false
+		
+		@Flag(name: .short, help: ArgumentHelp("Skip files when encountering errors instead of canceling. Recursive mode only."))
+		var ignoreErrors: Bool = false
+		
+		@Flag(name: .short, help: ArgumentHelp("Print relative paths of the files while they are copied. Recursive mode only."))
+		var verbose: Bool = false
+	}
+	
+	struct MetadataOptions: ParsableArguments {
+		@Flag(name: .long, help: ArgumentHelp("Don't copy creation and modification dates."))
+		var noDates: Bool = false
+		
+		@Flag(name: .long, help: ArgumentHelp("Don't copy permissions, owner and group."))
+		var noPerms: Bool = false
+		
+		@Flag(name: .long, help: ArgumentHelp("Don't copy extended attributes."))
+		var noXattrs: Bool = false
+		
+		@Flag(name: .long, help: ArgumentHelp("Don't copy HFS type and creator codes."))
+		var noHFS: Bool = false
+	}
+	
 	@Argument(help: ArgumentHelp("The path to the input file or directory.", valueName: "input file"))
 	var inputFilePath: String
 	
 	@Argument(help: ArgumentHelp("The path to the output file or directory.", valueName: "output file"))
 	var outputFilePath: String
 	
-	@Flag(name: .short, help: ArgumentHelp("Recursively copy contents of directory. Input and output need to be directories."))
-	var recursive: Bool = false
+	@OptionGroup(title: "Recursive Mode Options")
+	var recursiveModeOptions: RecursiveModeOptions
 	
-	@Flag(name: .short, help: ArgumentHelp("Skip files when encountering errors instead of canceling. Recursive mode only."))
-	var ignoreErrors: Bool = false
-	
-	@Flag(name: .short, help: ArgumentHelp("Print relative paths of the files while they are copied. Recursive mode only."))
-	var verbose: Bool = false
+	@OptionGroup(title: "Metadata Options")
+	var metadataOptions: MetadataOptions
 	
 	func run() throws {
 		let inputFileURL = URL(fileURLWithPath: inputFilePath)
 		let outputFileURL = URL(fileURLWithPath: outputFilePath)
 		
-		let metaCopy = MetaCopy(inputFile: inputFileURL, outputFile: outputFileURL)
+		let metaCopy = MetaCopy(
+			inputFile: inputFileURL,
+			outputFile: outputFileURL,
+			copyDates: !metadataOptions.noDates,
+			copyPermissions: !metadataOptions.noPerms,
+			copyExtendedAttributes: !metadataOptions.noXattrs,
+			copyHFSCodes: !metadataOptions.noHFS
+		)
 		
 		// Check whether input file exists
 		var inputIsDirectory = false
@@ -43,7 +72,7 @@ struct Command: ParsableCommand {
 			throw ArgumentsError.noSuchInputFile(url: inputFileURL)
 		}
 		
-		if recursive {
+		if recursiveModeOptions.recursive {
 			// Check whether input is directory
 			guard inputIsDirectory else {
 				throw ArgumentsError.noSuchInputDirectory(url: inputFileURL)
@@ -54,7 +83,7 @@ struct Command: ParsableCommand {
 				throw ArgumentsError.noSuchOutputDirectory(url: outputFileURL)
 			}
 			
-			try metaCopy.copyContents(verbose: verbose, skipErrors: ignoreErrors)
+			try metaCopy.copyContents(verbose: recursiveModeOptions.verbose, skipErrors: recursiveModeOptions.ignoreErrors)
 		}
 		else {
 			try metaCopy.copyFile()
