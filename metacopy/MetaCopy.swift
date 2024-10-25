@@ -15,47 +15,66 @@ struct MetaCopy {
 	let copyDates: Bool
 	let copyPermissions: Bool
 	let copyExtendedAttributes: Bool
+	let copyFlags: Bool
 	let copyHFSCodes: Bool
 	
 	private let manager = FileManager.default
-	private let resourceKeys: Set<URLResourceKey> = [
-		.isRegularFileKey,
-		.isDirectoryKey,
-		.isAliasFileKey,
-		.isSymbolicLinkKey,
-		.mayHaveExtendedAttributesKey,
-	]
+	private let resourceKeysToRead: Set<URLResourceKey>
+	private let resourceKeysToComp: Set<URLResourceKey>
+	private let resourceKeysToCopy: Set<URLResourceKey>
 	private let attributeKeysToCopy: [FileAttributeKey]
 	
 	
-	init(inputFile: URL, outputFile: URL, copyDates: Bool, copyPermissions: Bool, copyExtendedAttributes: Bool, copyHFSCodes: Bool) {
+	init(inputFile: URL, outputFile: URL, copyDates: Bool, copyPermissions: Bool, copyExtendedAttributes: Bool, copyFlags: Bool, copyHFSCodes: Bool) {
 		self.inputFile = inputFile
 		self.outputFile = outputFile
 		self.copyDates = copyDates
 		self.copyPermissions = copyPermissions
 		self.copyExtendedAttributes = copyExtendedAttributes
+		self.copyFlags = copyFlags
 		self.copyHFSCodes = copyHFSCodes
 		
-		var attributeKeysToCopy = [FileAttributeKey]()
-		func addKeys(if condition: Bool, _ newKeys: [FileAttributeKey]) {
-			if condition { attributeKeysToCopy.append(contentsOf: newKeys) }
+		func addKeys<T>(to keys: inout Set<T>, if condition: Bool, _ newKeys: Set<T>) {
+			if condition { keys.formUnion(newKeys) }
 		}
-		addKeys(if: copyDates, [
+		var attributeKeysToCopy: Set<FileAttributeKey> = []
+		var resourceKeysToCopy: Set<URLResourceKey> = []
+		let resourceKeysToComp: Set<URLResourceKey> = [
+			.isRegularFileKey,
+			.isDirectoryKey,
+			.isAliasFileKey,
+			.isSymbolicLinkKey,
+			.mayHaveExtendedAttributesKey,
+		]
+		
+		// Dates
+		addKeys(to: &attributeKeysToCopy, if: copyDates, [
 			.creationDate,
 			.modificationDate,
 		])
-		addKeys(if: copyPermissions, [
+		// Permissions
+		addKeys(to: &attributeKeysToCopy, if: copyPermissions, [
 			.posixPermissions,
 			.ownerAccountID,
 			.ownerAccountName,
 			.groupOwnerAccountID,
 			.groupOwnerAccountName,
 		])
-		addKeys(if: copyHFSCodes, [
-			.hfsCreatorCode,
-			.hfsTypeCode
+		// Flags
+		addKeys(to: &resourceKeysToCopy, if: copyFlags, [
+			.isHiddenKey,
+			.isUserImmutableKey,
 		])
-		self.attributeKeysToCopy = attributeKeysToCopy
+		// HFS codes
+		addKeys(to: &attributeKeysToCopy, if: copyHFSCodes, [
+			.hfsCreatorCode,
+			.hfsTypeCode,
+		])
+		
+		self.resourceKeysToRead = resourceKeysToComp.union(resourceKeysToCopy)
+		self.resourceKeysToComp = resourceKeysToComp
+		self.resourceKeysToCopy = resourceKeysToCopy
+		self.attributeKeysToCopy = Array(attributeKeysToCopy)
 	}
 	
 	
@@ -69,7 +88,7 @@ struct MetaCopy {
 		
 		let enumerator = manager.enumerator(
 			at: inputFile,
-			includingPropertiesForKeys: Array(resourceKeys),
+			includingPropertiesForKeys: Array(resourceKeysToRead),
 			options: [.producesRelativePathURLs],
 			errorHandler: errorHandler
 		)
@@ -79,7 +98,7 @@ struct MetaCopy {
 		
 		// Enumerate contents of input directory recursively
 		for case let url as URL in enumerator {
-			let resourceValues = try url.resourceValues(forKeys: resourceKeys)
+			let resourceValues = try url.resourceValues(forKeys: resourceKeysToRead)
 			let relativePath = url.relativePath
 			let sourceURL = inputFile.appending(path: relativePath)
 			let mirrorURL = outputFile.appending(path: relativePath)
@@ -108,7 +127,7 @@ struct MetaCopy {
 	}
 	
 	func copyFile() throws {
-		let sourceResourceValues = try inputFile.resourceValues(forKeys: resourceKeys)
+		let sourceResourceValues = try inputFile.resourceValues(forKeys: resourceKeysToRead)
 		try copyFile(sourceURL: inputFile, mirrorURL: outputFile, sourceResourceValues: sourceResourceValues)
 	}
 	
@@ -130,7 +149,7 @@ struct MetaCopy {
 		// Check whether mirror already exists and types match
 		let mirrorExists = (try? mirrorURL.checkResourceIsReachable()) ?? false
 		if mirrorExists {
-			let mirrorResourceValues = try mirrorURL.resourceValues(forKeys: resourceKeys)
+			let mirrorResourceValues = try mirrorURL.resourceValues(forKeys: resourceKeysToComp)
 			guard
 				mirrorResourceValues.isRegularFile! == isRegularFile,
 				mirrorResourceValues.isDirectory! == isDirectory,
@@ -141,19 +160,24 @@ struct MetaCopy {
 			}
 		}
 		
-		// Read attributes
-		let attributes = try manager.attributesOfItem(atPath: sourcePath)
-		var mirrorAttributes: [FileAttributeKey: Any] = [:]
+		// Read attributes and resource values
+		let sourceAttributes = try manager.attributesOfItem(atPath: sourcePath)
+		var newMirrorAttributes: [FileAttributeKey: Any] = [:]
 		for key in attributeKeysToCopy {
-			mirrorAttributes[key] = attributes[key]
+			newMirrorAttributes[key] = sourceAttributes[key]
 		}
+		let newMirrorResourceValues = try sourceURL.resourceValues(forKeys: resourceKeysToCopy)
 		
 		// Create mirror
 		if isSymbolicLink || isAliasFile {
 			// Link
 			do {
 				try manager.copyItem(at: sourceURL, to: mirrorURL)
-//				try manager.setAttributes(mirrorAttributes, ofItemAtPath: mirrorPath)
+				if !isSymbolicLink {
+					// Is alias, copy attributes
+					try manager.setAttributes(newMirrorAttributes, ofItemAtPath: mirrorPath)
+				}
+//				try manager.setAttributes(newMirrorAttributes, ofItemAtPath: mirrorPath)  // Tries to set attributes on resolved symlink path
 			}
 			catch CocoaError.fileWriteFileExists {
 				// TODO: Check whether contents are equal
@@ -166,11 +190,11 @@ struct MetaCopy {
 			// Directory
 			do {
 				// Create directory
-				try manager.createDirectory(at: mirrorURL, withIntermediateDirectories: false, attributes: mirrorAttributes)
+				try manager.createDirectory(at: mirrorURL, withIntermediateDirectories: false, attributes: newMirrorAttributes)
 			}
 			catch CocoaError.fileWriteFileExists {
 				// Directory exists, copy attributes
-				try manager.setAttributes(mirrorAttributes, ofItemAtPath: mirrorPath)
+				try manager.setAttributes(newMirrorAttributes, ofItemAtPath: mirrorPath)
 			}
 			catch {
 				throw FileError.directoryCreation(url: mirrorURL, error: error)
@@ -180,14 +204,14 @@ struct MetaCopy {
 			// Regular file
 			if !mirrorExists {
 				// Create empty file
-				let success = manager.createFile(atPath: mirrorPath, contents: nil, attributes: mirrorAttributes)
+				let success = manager.createFile(atPath: mirrorPath, contents: nil, attributes: newMirrorAttributes)
 				guard success else {
 					throw FileError.fileCreation(url: mirrorURL)
 				}
 			}
 			else {
 				// File exists, copy attributes
-				try manager.setAttributes(mirrorAttributes, ofItemAtPath: mirrorPath)
+				try manager.setAttributes(newMirrorAttributes, ofItemAtPath: mirrorPath)
 			}
 		}
 		
@@ -201,6 +225,17 @@ struct MetaCopy {
 			}
 			catch {
 				throw FileError.extendedAttributesCopying(url: mirrorURL, error: error)
+			}
+		}
+		
+		// Copy resource values
+		if copyFlags {
+			do {
+				var mirrorURL = mirrorURL
+				try mirrorURL.setResourceValues(newMirrorResourceValues)
+			}
+			catch {
+				throw FileError.flagsCopying(url: mirrorURL, error: error)
 			}
 		}
 	}
@@ -218,6 +253,7 @@ extension MetaCopy {
 		case fileCreation(url: URL)
 		case linkCopying(url: URL, error: Error)
 		case extendedAttributesCopying(url: URL, error: Error)
+		case flagsCopying(url: URL, error: Error)
 		
 		static func posixError(_ err: Int32) -> NSError {
 			NSError(
@@ -246,6 +282,8 @@ extension MetaCopy {
 						return ("Couldn't copy symlink or alias to", url, error)
 					case .extendedAttributesCopying(let url, let error):
 						return ("Couldn't copy extended attributes to", url, error)
+					case .flagsCopying(let url, let error):
+						return ("Couldn't copy flags to", url, error)
 				}
 			}()
 			var message = description

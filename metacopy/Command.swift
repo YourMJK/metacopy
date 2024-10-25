@@ -37,6 +37,9 @@ struct Command: ParsableCommand {
 		@Flag(name: .long, help: ArgumentHelp("Don't copy extended attributes."))
 		var noXattrs: Bool = false
 		
+		@Flag(name: .long, help: ArgumentHelp("Don't copy \"hidden\" and \"immutable\" flags."))
+		var noFlags: Bool = false
+		
 		@Flag(name: .long, help: ArgumentHelp("Don't copy HFS type and creator codes."))
 		var noHFS: Bool = false
 	}
@@ -63,6 +66,7 @@ struct Command: ParsableCommand {
 			copyDates: !metadataOptions.noDates,
 			copyPermissions: !metadataOptions.noPerms,
 			copyExtendedAttributes: !metadataOptions.noXattrs,
+			copyFlags: !metadataOptions.noFlags,
 			copyHFSCodes: !metadataOptions.noHFS
 		)
 		
