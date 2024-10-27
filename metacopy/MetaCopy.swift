@@ -216,7 +216,9 @@ struct MetaCopy {
 		}
 		
 		// Copy extended attributes
-		if copyExtendedAttributes && sourceResourceValues.mayHaveExtendedAttributes! && !isSymbolicLink {
+		// (if mayHaveExtendedAttributes on source URL can't be determined, try copying anyway)
+		let mayHaveExtendedAttributes = sourceResourceValues.mayHaveExtendedAttributes ?? true
+		if copyExtendedAttributes && mayHaveExtendedAttributes && !isSymbolicLink {
 			do {
 				for name in try ExtendedAttributes.list(url: sourceURL) {
 					let data = try ExtendedAttributes.read(url: sourceURL, name: name)
