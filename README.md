@@ -1,12 +1,12 @@
 # metacopy
-A macOS command-line tool for backing up and restoring only the metadata of files/directories but not their contents.
+**A macOS command-line tool for backing up and restoring only the metadata of files/directories but not their contents.**
 
 * Can also be used recursively to maintain directory structure (for backup/archive purposes for example)
 * Copying works in both directions:
   * Backup: If a target file doesn't exist, a new empty file (zero bytes) will be created but with the same metadata as the source file
   * Restore: If a target file already exists, only the metadata of that file will be updated and the contents remain unchanged
 * Symlinks and aliases are copied as is (not as empty files and not resolved to their targets)
-* Extended Attributes (xattrs) are copied additively, i.e. only xattrs with the same name will be overwritten, other source xattrs added and other target xattrs left unchanged.
+* Extended Attributes (EAs) are copied additively, i.e. only EAs with the same name will be overwritten, other source EAs added and other target EAs left unchanged.
 * Can copy the following metadata:
   * **Dates:** creation, modification and access dates
   * **Permissions:** POSIX permissions, owner and group IDs/names (Access Control Lists are not yet supported!)
@@ -47,7 +47,8 @@ GENERAL OPTIONS:
 
 ## Download compiled binary
 
-Instead of building the tool yourself, you can download a compiled binary for macOS from the [**latest&nbsp;release**](https://github.com/YourMJK/metacopy/releases/latest).
+Instead of building the tool yourself, you can download a compiled binary for macOS from the [**latest&nbsp;release**](https://github.com/YourMJK/metacopy/releases/latest).  
+Requires at least macOS 13 Ventura.
 
 ## Build prerequisites
 
