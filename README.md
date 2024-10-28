@@ -26,11 +26,11 @@ ARGUMENTS:
   <output file>     The path to the output file or directory.
 
 RECURSIVE MODE OPTIONS:
-  -r                Recursively copy contents of directory. Input and output
-                    need to be directories.
-  -i                Skip files when encountering errors instead of canceling
-                    Recursive mode only.
-  -v                Print relative paths of the files while they are copied.
+  -r                Recursively copy contents of directory. Input and output need to be
+                    directories.
+  -s                Skip files when encountering errors instead of canceling.
+                    An error message is still printed to STDERR. Recursive mode only.
+  -v                Print relative paths of successfully copied files to STDOUT.
                     Recursive mode only.
 
 METADATA OPTIONS:

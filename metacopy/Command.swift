@@ -13,17 +13,18 @@ import ArgumentParser
 struct Command: ParsableCommand {
 	static let configuration = CommandConfiguration(
 		commandName: executableName,
-		helpMessageLabelColumnWidth: 20
+		helpMessageLabelColumnWidth: 20,
+		alwaysCompactUsageOptions: true
 	)
 	
 	struct RecursiveModeOptions: ParsableArguments {
 		@Flag(name: .short, help: ArgumentHelp("Recursively copy contents of directory. Input and output need to be directories."))
 		var recursive: Bool = false
 		
-		@Flag(name: .short, help: ArgumentHelp("Skip files when encountering errors instead of canceling. Recursive mode only."))
-		var ignoreErrors: Bool = false
+		@Flag(name: .short, help: ArgumentHelp("Skip files when encountering errors instead of canceling. An error message is still printed to STDERR. Recursive mode only."))
+		var skipErrors: Bool = false
 		
-		@Flag(name: .short, help: ArgumentHelp("Print relative paths of the files while they are copied. Recursive mode only."))
+		@Flag(name: .short, help: ArgumentHelp("Print relative paths of successfully copied files to STDOUT. Recursive mode only."))
 		var verbose: Bool = false
 	}
 	
@@ -87,7 +88,7 @@ struct Command: ParsableCommand {
 				throw ArgumentsError.noSuchOutputDirectory(url: outputFileURL)
 			}
 			
-			try metaCopy.copyContents(verbose: recursiveModeOptions.verbose, skipErrors: recursiveModeOptions.ignoreErrors)
+			try metaCopy.copyContents(verbose: recursiveModeOptions.verbose, skipErrors: recursiveModeOptions.skipErrors)
 		}
 		else {
 			try metaCopy.copyFile()
