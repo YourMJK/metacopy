@@ -41,6 +41,7 @@ METADATA OPTIONS:
   --no-hfs          Don't copy HFS type and creator codes.
 
 GENERAL OPTIONS:
+  --version         Show the version.
   -h, --help        Show help information.
 ```
 
